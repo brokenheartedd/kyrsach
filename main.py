@@ -1,7 +1,7 @@
 import sys
 import os
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QTableView, QAbstractItemView
+from PyQt5.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QTableView, QAbstractItemView, QPushButton, QHBoxLayout
 from PyQt5.QtGui import QStandardItemModel, QStandardItem
 import fdb
 
@@ -18,7 +18,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         # Настройка окна
-        self.setWindowTitle("Таблицы в вкладках")
+        self.setWindowTitle("Таксопарк 666")
         self.setGeometry(100, 100, 800, 600)
 
         # Создание QTabWidget
@@ -68,8 +68,33 @@ class MainWindow(QMainWindow):
 
         table_view.setModel(model)
         table_view.resizeColumnsToContents()
+
+        # Добавление кнопок
+        button_layout = QHBoxLayout()
+        add_button = QPushButton("Add")
+        save_button = QPushButton("Save")
+        delete_button = QPushButton("Delete")
+
+        add_button.clicked.connect(lambda: self.add_row(table_name))
+        save_button.clicked.connect(lambda: self.save_changes(table_name))
+        delete_button.clicked.connect(lambda: self.delete_row(table_name))
+
+        button_layout.addWidget(add_button)
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(delete_button)
+
+        layout.addLayout(button_layout)
         layout.addWidget(table_view)
         tab.setLayout(layout)
+
+    def add_row(self, table_name):
+        print(f"Add row to {table_name}")  # Placeholder for adding a row
+
+    def save_changes(self, table_name):
+        print(f"Save changes to {table_name}")  # Placeholder for saving changes
+
+    def delete_row(self, table_name):
+        print(f"Delete row from {table_name}")  # Placeholder for deleting a row
 
 
 if __name__ == "__main__":
