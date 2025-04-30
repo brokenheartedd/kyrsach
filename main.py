@@ -1,40 +1,80 @@
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem
-from db_connect import connect_to_db
+import sys
+import os
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QTableView, QAbstractItemView
+from PyQt5.QtGui import QStandardItemModel, QStandardItem
+import fdb
 
-class OrderTableWindow(QWidget):
+
+con = fdb.connect(
+    dsn='localhost:D:/Dmitry/Projects/leonid-kyrsach/kyrsach-db/TAXOPARK.DB', # ToDo: вынести в конфиг
+    user='SYSDBA',
+    password='masterkey',
+    charset='UTF8')
+
+
+class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Список заказов")
-        self.setGeometry(100, 100, 800, 400)
 
-        self.layout = QVBoxLayout()
-        self.table = QTableWidget()
-        self.layout.addWidget(self.table)
-        self.setLayout(self.layout)
+        # Настройка окна
+        self.setWindowTitle("Таблицы в вкладках")
+        self.setGeometry(100, 100, 800, 600)
 
-        self.load_data()
+        # Создание QTabWidget
+        tab_widget = QTabWidget()
+        self.setCentralWidget(tab_widget)
 
-    def load_data(self):
-        connection = connect_to_db()
-        cursor = connection.cursor()
+        # Создание вкладок
+        self.cars_tab = QWidget()
+        self.drivers_tab = QWidget()
+        self.ordertable_tab = QWidget()
+        self.payments_tab = QWidget()
+        self.tariffs_tab = QWidget()
 
-        cursor.execute("SELECT * FROM ORDERTABLE")
+        # Добавление вкладок
+        tab_widget.addTab(self.cars_tab, "Машины")
+        tab_widget.addTab(self.drivers_tab, "Водители")
+        tab_widget.addTab(self.ordertable_tab, "Заказы")
+        tab_widget.addTab(self.payments_tab, "Платежи")
+        tab_widget.addTab(self.tariffs_tab, "Тарифы")
+
+        # Настроим таблицы для каждой вкладки
+        self.setup_table(self.cars_tab, "CAR")
+        self.setup_table(self.drivers_tab, "DRIVER")
+        self.setup_table(self.ordertable_tab, "ORDERTABLE")
+        self.setup_table(self.payments_tab, "PAYMENT")
+        self.setup_table(self.tariffs_tab, "TARIFF")
+
+    def setup_table(self, tab, table_name):
+        layout = QVBoxLayout()
+        table_view = QTableView()
+        table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
+
+        # Подключение к базе данных и выполнение запроса
+        cursor = con.cursor()
+        cursor.execute(f"SELECT * FROM {table_name}")
         rows = cursor.fetchall()
         columns = [desc[0] for desc in cursor.description]
 
-        self.table.setColumnCount(len(columns))
-        self.table.setRowCount(len(rows))
-        self.table.setHorizontalHeaderLabels(columns)
+        # Создание модели данных
+        model = QStandardItemModel(len(rows), len(columns))
+        model.setHorizontalHeaderLabels(columns)
 
-        for row_idx, row_data in enumerate(rows):
-            for col_idx, cell in enumerate(row_data):
-                self.table.setItem(row_idx, col_idx, QTableWidgetItem(str(cell)))
+        for row_idx, row in enumerate(rows):
+            for col_idx, value in enumerate(row):
+                item = QStandardItem(str(value))
+                model.setItem(row_idx, col_idx, item)
 
-        connection.close()
+        table_view.setModel(model)
+        table_view.resizeColumnsToContents()
+        layout.addWidget(table_view)
+        tab.setLayout(layout)
 
 
-if __name__ == '__main__':
-    app = QApplication([])
-    window = OrderTableWindow()
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+
+    window = MainWindow()
     window.show()
-    app.exec_()
+    sys.exit(app.exec_())
