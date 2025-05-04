@@ -2,7 +2,7 @@ import fdb
 
 def connect_to_db():
     con = fdb.connect(
-        dsn='localhost:C:/Program Files/RedDatabase/taxopark',
+        dsn='C:/Program Files/RedDatabase/TAXOPARK',  # ToDo: вынести в конфиг
         user='SYSDBA',
         password='masterkey',
     )
