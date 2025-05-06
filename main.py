@@ -123,19 +123,22 @@ class MainWindow(QMainWindow):
         form_layout.addRow("Расстояние (км):", self.distance_input)
         form_layout.addRow(self.cost_label)
 
-        # Кнопки для расчета, сохранения и оплаты
+        # Кнопки для расчета, сохранения, оплаты и оплаты картой
         button_layout = QHBoxLayout()
         calc_button = QPushButton("Рассчитать стоимость")
         save_button = QPushButton("Сохранить заказ")
         pay_button = QPushButton("Оплатить")
+        card_pay_button = QPushButton("Оплатить картой")
 
         calc_button.clicked.connect(self.calculate_cost)
         save_button.clicked.connect(self.save_order)
         pay_button.clicked.connect(self.process_payment)
+        card_pay_button.clicked.connect(self.pay_with_card)
 
         button_layout.addWidget(calc_button)
         button_layout.addWidget(save_button)
         button_layout.addWidget(pay_button)
+        button_layout.addWidget(card_pay_button)
 
         layout.addLayout(form_layout)
         layout.addLayout(button_layout)
@@ -149,8 +152,10 @@ class MainWindow(QMainWindow):
             price_per_km = self.tariffs_data.get(tariff_id, 0)
             cost = distance * price_per_km
             self.cost_label.setText(f"Стоимость: {cost:.2f}")
+            return cost
         except ValueError:
             QMessageBox.warning(None, "Ошибка", "Введите корректное расстояние (число)")
+            return None
 
     def save_order(self):
         client_name = self.client_name_input.text().strip()
@@ -164,13 +169,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(None, "Ошибка", "Заполните все поля")
             return
 
-        try:
-            distance = float(distance)
-            tariff_id = self.tariff_combo.currentData()
-            price_per_km = self.tariffs_data.get(tariff_id, 0)
-            cost = distance * price_per_km
-        except ValueError:
-            QMessageBox.warning(None, "Ошибка", "Введите корректное расстояние (число)")
+        cost = self.calculate_cost()
+        if cost is None:
             return
 
         cursor = con.cursor()
@@ -180,24 +180,28 @@ class MainWindow(QMainWindow):
             max_id = cursor.fetchone()[0]
             new_order_id = (max_id or 0) + 1
 
+            # Отладочный вывод параметров
+            print(f"Parameters for ORDERTABLE: ID={new_order_id}, CLIENT_NAME={client_name}, PHONE={phone}, DRIVER_ID={driver_id}, TARIFF_ID={tariff_id}, ORDER_DATE={order_date}, DISTANCE={float(distance)}")
+            print(f"TARIFF_ID type: {type(tariff_id)}, value: {tariff_id}, length: {len(str(tariff_id))}")
+
             # Сохраняем заказ
             sql_order = """
             INSERT INTO ORDERTABLE (ID, CLIENT_NAME, PHONE, DRIVER_ID, TARIFF_ID, ORDER_DATE, DISTANCE)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """
-            cursor.execute(sql_order, (new_order_id, client_name, phone, driver_id, tariff_id, order_date, distance))
+            cursor.execute(sql_order, (new_order_id, client_name, phone, driver_id, int(tariff_id), order_date, float(distance)))
 
-            # Создаем запись оплаты
+            # Создаем запись оплаты с статусом "Не оплачено"
             cursor.execute("SELECT MAX(ID) FROM PAYMENT")
             max_payment_id = cursor.fetchone()[0]
             new_payment_id = (max_payment_id or 0) + 1
 
             payment_date = date.today().strftime("%Y-%m-%d")
             sql_payment = """
-            INSERT INTO PAYMENT (ID, ORDER_ID, AMOUNT, PAID_DATE)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO PAYMENT (ID, ORDER_ID, AMOUNT, PAID_DATE, PAYMENT_STATUS)
+            VALUES (?, ?, ?, ?, ?)
             """
-            cursor.execute(sql_payment, (new_payment_id, new_order_id, cost, payment_date))
+            cursor.execute(sql_payment, (new_payment_id, new_order_id, cost, payment_date, "Не оплачено"))
 
             con.commit()
 
@@ -207,13 +211,13 @@ class MainWindow(QMainWindow):
             self.load_data("ORDERTABLE", order_model)
             self.load_data("PAYMENT", payment_model)
 
-            # Очищаем форму, но сохраняем видимость
+            # Очищаем форму
             self.client_name_input.clear()
             self.phone_input.clear()
             self.distance_input.clear()
             self.cost_label.setText("Стоимость: 0.0")
 
-            QMessageBox.information(None, "Успех", "Заказ и оплата успешно сохранены")
+            QMessageBox.information(None, "Успех", "Заказ и оплата успешно сохранены (статус: Не оплачено)")
         except Exception as e:
             con.rollback()
             QMessageBox.critical(None, "Ошибка", f"Ошибка сохранения: {str(e)}")
@@ -230,55 +234,167 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(None, "Ошибка", "Заполните все поля перед оплатой")
             return
 
-        try:
-            distance = float(distance)
-            tariff_id = self.tariff_combo.currentData()
-            price_per_km = self.tariffs_data.get(tariff_id, 0)
-            cost = distance * price_per_km
-        except ValueError:
-            QMessageBox.warning(None, "Ошибка", "Введите корректное расстояние (число)")
+        cost = self.calculate_cost()
+        if cost is None:
             return
 
-        # Проверяем, сохранен ли заказ
         cursor = con.cursor()
-        cursor.execute("SELECT MAX(ID) FROM ORDERTABLE")
-        max_order_id = cursor.fetchone()[0]
-        if max_order_id is None:
-            max_order_id = 0
-        order_id = max_order_id + 1
+        try:
+            # Проверяем, сохранен ли заказ
+            cursor.execute("SELECT MAX(ID) FROM ORDERTABLE")
+            max_order_id = cursor.fetchone()[0]
+            if max_order_id is None:
+                max_order_id = 0
+            order_id = max_order_id + 1
 
-        cursor.execute("SELECT COUNT(*) FROM ORDERTABLE WHERE ID = ?", (order_id,))
-        if cursor.fetchone()[0] == 0:
-            sql = """
-            INSERT INTO ORDERTABLE (ID, CLIENT_NAME, PHONE, DRIVER_ID, TARIFF_ID, ORDER_DATE, DISTANCE)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """
-            cursor.execute(sql, (order_id, client_name, phone, driver_id, tariff_id, order_date, distance))
+            # Если заказ не сохранен, сохраняем его
+            cursor.execute("SELECT COUNT(*) FROM ORDERTABLE WHERE ID = ?", (order_id,))
+            if cursor.fetchone()[0] == 0:
+                sql = """
+                INSERT INTO ORDERTABLE (ID, CLIENT_NAME, PHONE, DRIVER_ID, TARIFF_ID, ORDER_DATE, DISTANCE)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """
+                cursor.execute(sql, (order_id, client_name, phone, driver_id, int(tariff_id), order_date, float(distance)))
 
-        # Создаем запись оплаты
-        cursor.execute("SELECT MAX(ID) FROM PAYMENT")
-        max_payment_id = cursor.fetchone()[0]
-        new_payment_id = (max_payment_id or 0) + 1
+                # Создаем запись оплаты с статусом "Не оплачено"
+                cursor.execute("SELECT MAX(ID) FROM PAYMENT")
+                max_payment_id = cursor.fetchone()[0]
+                new_payment_id = (max_payment_id or 0) + 1
 
-        payment_date = date.today().strftime("%Y-%m-%d")
-        sql_payment = """
-        INSERT INTO PAYMENT (ID, ORDER_ID, AMOUNT, PAID_DATE)
-        VALUES (?, ?, ?, ?)
-        """
-        cursor.execute(sql_payment, (new_payment_id, order_id, cost, payment_date))
-        con.commit()
+                payment_date = date.today().strftime("%Y-%m-%d")
+                sql_payment = """
+                INSERT INTO PAYMENT (ID, ORDER_ID, AMOUNT, PAID_DATE, PAYMENT_STATUS)
+                VALUES (?, ?, ?, ?, ?)
+                """
+                cursor.execute(sql_payment, (new_payment_id, order_id, cost, payment_date, "Не оплачено"))
 
-        # Обновляем таблицу платежей
-        payment_model, _ = self.tables["PAYMENT"]
-        self.load_data("PAYMENT", payment_model)
+            # Обновляем статус оплаты на "Оплачено"
+            cursor.execute("SELECT ID FROM PAYMENT WHERE ORDER_ID = ? AND PAYMENT_STATUS = 'Не оплачено'", (order_id,))
+            payment_id = cursor.fetchone()
+            if payment_id:
+                payment_id = payment_id[0]
+                payment_date = date.today().strftime("%Y-%m-%d")
+                sql_update = """
+                UPDATE PAYMENT SET AMOUNT = ?, PAID_DATE = ?, PAYMENT_STATUS = ? WHERE ID = ?
+                """
+                cursor.execute(sql_update, (cost, payment_date, "Оплачено", payment_id))
+            else:
+                # Если записи "Не оплачено" нет, создаем новую с "Оплачено"
+                cursor.execute("SELECT MAX(ID) FROM PAYMENT")
+                max_payment_id = cursor.fetchone()[0]
+                new_payment_id = (max_payment_id or 0) + 1
+                payment_date = date.today().strftime("%Y-%m-%d")
+                sql_payment = """
+                INSERT INTO PAYMENT (ID, ORDER_ID, AMOUNT, PAID_DATE, PAYMENT_STATUS)
+                VALUES (?, ?, ?, ?, ?)
+                """
+                cursor.execute(sql_payment, (new_payment_id, order_id, cost, payment_date, "Оплачено"))
 
-        # Очищаем форму
-        self.client_name_input.clear()
-        self.phone_input.clear()
-        self.distance_input.clear()
-        self.cost_label.setText("Стоимость: 0.0")
+            con.commit()
 
-        QMessageBox.information(None, "Успех", "Оплата успешно обработана")
+            # Обновляем таблицы
+            order_model, _ = self.tables["ORDERTABLE"]
+            payment_model, _ = self.tables["PAYMENT"]
+            self.load_data("ORDERTABLE", order_model)
+            self.load_data("PAYMENT", payment_model)
+
+            # Очищаем форму
+            self.client_name_input.clear()
+            self.phone_input.clear()
+            self.distance_input.clear()
+            self.cost_label.setText("Стоимость: 0.0")
+
+            QMessageBox.information(None, "Успех", "Оплата успешно обработана (статус: Оплачено)")
+        except Exception as e:
+            con.rollback()
+            QMessageBox.critical(None, "Ошибка", f"Ошибка обработки оплаты: {str(e)}")
+
+    def pay_with_card(self):
+        client_name = self.client_name_input.text().strip()
+        phone = self.phone_input.text().strip()
+        driver_id = self.driver_combo.currentData()
+        tariff_id = self.tariff_combo.currentData()
+        order_date = self.date_input.date().toString("yyyy-MM-dd")
+        distance = self.distance_input.text().strip()
+
+        if not all([client_name, phone, driver_id, tariff_id, distance]):
+            QMessageBox.warning(None, "Ошибка", "Заполните все поля перед оплатой")
+            return
+
+        cost = self.calculate_cost()
+        if cost is None:
+            return
+
+        cursor = con.cursor()
+        try:
+            # Проверяем, сохранен ли заказ
+            cursor.execute("SELECT MAX(ID) FROM ORDERTABLE")
+            max_order_id = cursor.fetchone()[0]
+            if max_order_id is None:
+                max_order_id = 0
+            order_id = max_order_id + 1
+
+            # Если заказ не сохранен, сохраняем его
+            cursor.execute("SELECT COUNT(*) FROM ORDERTABLE WHERE ID = ?", (order_id,))
+            if cursor.fetchone()[0] == 0:
+                sql = """
+                INSERT INTO ORDERTABLE (ID, CLIENT_NAME, PHONE, DRIVER_ID, TARIFF_ID, ORDER_DATE, DISTANCE)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """
+                cursor.execute(sql, (order_id, client_name, phone, driver_id, int(tariff_id), order_date, float(distance)))
+
+                # Создаем запись оплаты с статусом "Не оплачено"
+                cursor.execute("SELECT MAX(ID) FROM PAYMENT")
+                max_payment_id = cursor.fetchone()[0]
+                new_payment_id = (max_payment_id or 0) + 1
+
+                payment_date = date.today().strftime("%Y-%m-%d")
+                sql_payment = """
+                INSERT INTO PAYMENT (ID, ORDER_ID, AMOUNT, PAID_DATE, PAYMENT_STATUS)
+                VALUES (?, ?, ?, ?, ?)
+                """
+                cursor.execute(sql_payment, (new_payment_id, order_id, cost, payment_date, "Не оплачено"))
+
+            # Обновляем статус оплаты на "Оплачено" при оплате картой
+            cursor.execute("SELECT ID FROM PAYMENT WHERE ORDER_ID = ?", (order_id,))
+            payment_id = cursor.fetchone()
+            if payment_id:
+                payment_id = payment_id[0]
+                payment_date = date.today().strftime("%Y-%m-%d")
+                sql_update = """
+                UPDATE PAYMENT SET AMOUNT = ?, PAID_DATE = ?, PAYMENT_STATUS = ? WHERE ID = ?
+                """
+                cursor.execute(sql_update, (cost, payment_date, "Оплачено", payment_id))
+            else:
+                # Если записи нет, создаем новую с "Оплачено"
+                cursor.execute("SELECT MAX(ID) FROM PAYMENT")
+                max_payment_id = cursor.fetchone()[0]
+                new_payment_id = (max_payment_id or 0) + 1
+                payment_date = date.today().strftime("%Y-%m-%d")
+                sql_payment = """
+                INSERT INTO PAYMENT (ID, ORDER_ID, AMOUNT, PAID_DATE, PAYMENT_STATUS)
+                VALUES (?, ?, ?, ?, ?)
+                """
+                cursor.execute(sql_payment, (new_payment_id, order_id, cost, payment_date, "Оплачено"))
+
+            con.commit()
+
+            # Обновляем таблицы
+            order_model, _ = self.tables["ORDERTABLE"]
+            payment_model, _ = self.tables["PAYMENT"]
+            self.load_data("ORDERTABLE", order_model)
+            self.load_data("PAYMENT", payment_model)
+
+            # Очищаем форму
+            self.client_name_input.clear()
+            self.phone_input.clear()
+            self.distance_input.clear()
+            self.cost_label.setText("Стоимость: 0.0")
+
+            QMessageBox.information(None, "Успех", "Оплата картой успешно обработана (статус: Оплачено)")
+        except Exception as e:
+            con.rollback()
+            QMessageBox.critical(None, "Ошибка", f"Ошибка оплаты картой: {str(e)}")
 
     def load_data(self, table_name, model):
         cursor = con.cursor()
