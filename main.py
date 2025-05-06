@@ -11,185 +11,263 @@ from PyQt5.QtGui import QStandardItemModel, QStandardItem
 import fdb
 from datetime import date
 
-# Подключение к базе данных
-con = fdb.connect(
-    dsn='C:/Program Files/RedDatabase/TAXOPARK',
-    user='SYSDBA',
-    password='masterkey',
-)
+try:
+    # Подключение к базе данных
+    con = fdb.connect(
+        dsn='C:/Program Files/RedDatabase/TAXOPARK',
+        user='SYSDBA',
+        password='masterkey',
+    )
+except Exception as e:
+    print(f"Ошибка подключения к базе данных: {e}")
+    sys.exit(1)
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Таксопарк 666")
-        self.setGeometry(100, 100, 800, 600)
+        try:
+            super().__init__()
+            self.setWindowTitle("Таксопарк 666")
+            self.setGeometry(100, 100, 800, 600)
 
-        tab_widget = QTabWidget()
-        self.setCentralWidget(tab_widget)
+            tab_widget = QTabWidget()
+            self.setCentralWidget(tab_widget)
 
-        self.tables = {}
+            self.tables = {}
+            self.tariff_levels = {  # Соответствие тарифов уровням
+                1: 1,  # Стандарт → Уровень 1
+                2: 2,  # Комфорт → Уровень 2
+                3: 3   # Бизнес → Уровень 3
+            }
 
-        # Настройка вкладок
-        self.setup_table(tab_widget, "Машины", "CAR")
-        self.setup_table(tab_widget, "Водители", "DRIVER")
-        self.setup_table(tab_widget, "Заказы", "ORDERTABLE")
-        self.setup_table(tab_widget, "Платежи", "PAYMENT")
-        self.setup_table(tab_widget, "Тарифы", "TARIFF")
-        self.setup_order_form(tab_widget)
+            # Настройка вкладок
+            self.setup_table(tab_widget, "Машины", "CAR")
+            self.setup_table(tab_widget, "Водители", "DRIVER")
+            self.setup_table(tab_widget, "Заказы", "ORDERTABLE")
+            self.setup_table(tab_widget, "Платежи", "PAYMENT")
+            self.setup_table(tab_widget, "Тарифы", "TARIFF")
+            self.setup_order_form(tab_widget)
+        except Exception as e:
+            print(f"Ошибка при инициализации окна: {e}")
+            sys.exit(1)
 
     def setup_table(self, tab_widget, tab_name, table_name):
-        tab = QWidget()
-        layout = QVBoxLayout()
-        table_view = QTableView()
-        table_view.setEditTriggers(QAbstractItemView.DoubleClicked)
-        table_view.setSelectionMode(QAbstractItemView.SingleSelection)
-        table_view.setSelectionBehavior(QAbstractItemView.SelectRows)
+        try:
+            tab = QWidget()
+            layout = QVBoxLayout()
+            table_view = QTableView()
+            table_view.setEditTriggers(QAbstractItemView.DoubleClicked)
+            table_view.setSelectionMode(QAbstractItemView.SingleSelection)
+            table_view.setSelectionBehavior(QAbstractItemView.SelectRows)
 
-        # Инициализация модели
-        model = QStandardItemModel()
-        
-        # Загрузка данных из базы
-        self.load_data(table_name, model)
+            # Инициализация модели
+            model = QStandardItemModel()
+            
+            # Загрузка данных из базы
+            self.load_data(table_name, model)
 
-        table_view.setModel(model)
-        table_view.resizeColumnsToContents()
+            table_view.setModel(model)
+            table_view.resizeColumnsToContents()
 
-        # Сохраняем ссылки на модель и представление
-        self.tables[table_name] = (model, table_view)
+            # Сохраняем ссылки на модель и представление
+            self.tables[table_name] = (model, table_view)
 
-        # Настройка кнопок
-        button_layout = QHBoxLayout()
-        add_button = QPushButton("Add")
-        save_button = QPushButton("Save")
-        delete_button = QPushButton("Delete")
+            # Настройка кнопок
+            button_layout = QHBoxLayout()
+            add_button = QPushButton("Add")
+            save_button = QPushButton("Save")
+            delete_button = QPushButton("Delete")
+            if table_name == "ORDERTABLE":
+                pay_button = QPushButton("Оплатить")
+                pay_button.clicked.connect(lambda: self.process_payment_from_table(table_name))
+                button_layout.addWidget(pay_button)
 
-        add_button.clicked.connect(lambda: self.add_row(table_name))
-        save_button.clicked.connect(lambda: self.save_changes(table_name))
-        delete_button.clicked.connect(lambda: self.delete_row(table_name))
+            add_button.clicked.connect(lambda: self.add_row(table_name))
+            save_button.clicked.connect(lambda: self.save_changes(table_name))
+            delete_button.clicked.connect(lambda: self.delete_row(table_name))
 
-        button_layout.addWidget(add_button)
-        button_layout.addWidget(save_button)
-        button_layout.addWidget(delete_button)
+            button_layout.addWidget(add_button)
+            button_layout.addWidget(save_button)
+            button_layout.addWidget(delete_button)
 
-        layout.addLayout(button_layout)
-        layout.addWidget(table_view)
-        tab.setLayout(layout)
-        tab_widget.addTab(tab, tab_name)
+            layout.addLayout(button_layout)
+            layout.addWidget(table_view)
+            tab.setLayout(layout)
+            tab_widget.addTab(tab, tab_name)
+        except Exception as e:
+            print(f"Ошибка при настройке таблицы {table_name}: {e}")
+            sys.exit(1)
 
     def setup_order_form(self, tab_widget):
-        tab = QWidget()
-        layout = QVBoxLayout()
-
-        # Форма для заполнения заказа
-        form_layout = QFormLayout()
-
-        self.client_name_input = QLineEdit()
-        self.phone_input = QLineEdit()
-        self.phone_input.setPlaceholderText("+79991234567")
-
-        # Выпадающий список для выбора водителя
-        self.driver_combo = QComboBox()
-        cursor = con.cursor()
-        cursor.execute("SELECT ID, NAME FROM DRIVER")
-        drivers = cursor.fetchall()
-        for driver in drivers:
-            self.driver_combo.addItem(f"{driver[1]} (ID: {driver[0]})", driver[0])
-
-        # Выпадающий список для выбора тарифа
-        self.tariff_combo = QComboBox()
-        cursor.execute("SELECT ID, NAME, PRICE_PER_KM FROM TARIFF")
-        tariffs = cursor.fetchall()
-        self.tariffs_data = {tariff[0]: tariff[2] for tariff in tariffs}  # Сохраняем тарифы для расчета
-        for tariff in tariffs:
-            self.tariff_combo.addItem(f"{tariff[1]} (ID: {tariff[0]})", tariff[0])
-
-        # Поле для даты
-        self.date_input = QDateEdit()
-        self.date_input.setCalendarPopup(True)
-        self.date_input.setDate(date.today())
-
-        # Поле для расстояния
-        self.distance_input = QLineEdit()
-        self.distance_input.setPlaceholderText("Введите расстояние в км")
-
-        # Поле для отображения стоимости
-        self.cost_label = QLabel("Стоимость: 0.0")
-
-        form_layout.addRow("Имя клиента:", self.client_name_input)
-        form_layout.addRow("Телефон:", self.phone_input)
-        form_layout.addRow("Водитель:", self.driver_combo)
-        form_layout.addRow("Тариф:", self.tariff_combo)
-        form_layout.addRow("Дата заказа:", self.date_input)
-        form_layout.addRow("Расстояние (км):", self.distance_input)
-        form_layout.addRow(self.cost_label)
-
-        # Кнопки для расчета, сохранения, оплаты и оплаты картой
-        button_layout = QHBoxLayout()
-        calc_button = QPushButton("Рассчитать стоимость")
-        save_button = QPushButton("Сохранить заказ")
-        pay_button = QPushButton("Оплатить")
-        card_pay_button = QPushButton("Оплатить картой")
-
-        calc_button.clicked.connect(self.calculate_cost)
-        save_button.clicked.connect(self.save_order)
-        pay_button.clicked.connect(self.process_payment)
-        card_pay_button.clicked.connect(self.pay_with_card)
-
-        button_layout.addWidget(calc_button)
-        button_layout.addWidget(save_button)
-        button_layout.addWidget(pay_button)
-        button_layout.addWidget(card_pay_button)
-
-        layout.addLayout(form_layout)
-        layout.addLayout(button_layout)
-        tab.setLayout(layout)
-        tab_widget.addTab(tab, "Новый заказ")
-
-    def calculate_cost(self):
         try:
-            distance = float(self.distance_input.text().strip())
+            tab = QWidget()
+            layout = QVBoxLayout()
+
+            # Форма для заполнения заказа
+            form_layout = QFormLayout()
+
+            self.client_name_input = QLineEdit()
+            self.phone_input = QLineEdit()
+            self.phone_input.setPlaceholderText("+79991234567")
+
+            # Выпадающий список для выбора тарифа
+            self.tariff_combo = QComboBox()
+            cursor = con.cursor()
+            cursor.execute("SELECT ID, NAME, PRICE_PER_KM, COEFFICIENT FROM TARIFF")
+            tariffs = cursor.fetchall()
+            self.tariffs_data = {tariff[0]: (tariff[2], tariff[3] if tariff[3] is not None else 1.0) for tariff in tariffs}  # PRICE_PER_KM, COEFFICIENT
+            self.all_tariffs = tariffs
+            for tariff in tariffs:
+                self.tariff_combo.addItem(f"{tariff[1]} (ID: {tariff[0]})", tariff[0])
+
+            # Выпадающий список для выбора машины
+            self.car_combo = QComboBox()
+
+            # Поле для даты
+            self.date_input = QDateEdit()
+            self.date_input.setCalendarPopup(True)
+            self.date_input.setDate(date.today())
+
+            # Поле для расстояния
+            self.distance_input = QLineEdit()
+            self.distance_input.setPlaceholderText("Введите расстояние в км")
+
+            # Поле для отображения стоимости
+            self.cost_label = QLabel("Стоимость: 0.0")
+
+            form_layout.addRow("Имя клиента:", self.client_name_input)
+            form_layout.addRow("Телефон:", self.phone_input)
+            form_layout.addRow("Тариф:", self.tariff_combo)
+            form_layout.addRow("Машина:", self.car_combo)
+            form_layout.addRow("Дата заказа:", self.date_input)
+            form_layout.addRow("Расстояние (км):", self.distance_input)
+            form_layout.addRow(self.cost_label)
+
+            # Кнопки для сохранения и оплаты картой
+            button_layout = QHBoxLayout()
+            save_button = QPushButton("Сохранить заказ")
+            card_pay_button = QPushButton("Оплатить картой")
+
+            save_button.clicked.connect(self.save_order)
+            card_pay_button.clicked.connect(self.pay_with_card)
+
+            button_layout.addWidget(save_button)
+            button_layout.addWidget(card_pay_button)
+
+            layout.addLayout(form_layout)
+            layout.addLayout(button_layout)
+            tab.setLayout(layout)
+            tab_widget.addTab(tab, "Новый заказ")
+
+            # Подключение автоматического расчета стоимости
+            self.distance_input.textChanged.connect(self.update_cost)
+            self.tariff_combo.currentTextChanged.connect(self.update_cost)
+            # Подключение обновления списка машин при смене тарифа
+            self.tariff_combo.currentIndexChanged.connect(self.update_car_combo)
+        except Exception as e:
+            print(f"Ошибка при настройке формы заказа: {e}")
+            sys.exit(1)
+
+    def update_car_combo(self):
+        try:
+            # Очищаем текущий список машин
+            self.car_combo.clear()
+
+            # Получаем ID выбранного тарифа
             tariff_id = self.tariff_combo.currentData()
-            price_per_km = self.tariffs_data.get(tariff_id, 0)
-            cost = distance * price_per_km
+            if not tariff_id:
+                return  # Не заполняем список, если тариф не выбран
+
+            # Получаем уровень выбранного тарифа
+            tariff_level = self.tariff_levels.get(tariff_id, 1)
+
+            # Получаем текущую дату
+            current_date = self.date_input.date().toString("yyyy-MM-dd")
+
+            # Получаем список занятых машин (связанных с активными заказами на текущую дату)
+            cursor = con.cursor()
+            cursor.execute("""
+                SELECT DISTINCT ORDERTABLE.DRIVER_ID
+                FROM ORDERTABLE
+                JOIN PAYMENT ON ORDERTABLE.ID = PAYMENT.ORDER_ID
+                WHERE ORDERTABLE.ORDER_DATE = ? AND PAYMENT.PAYMENT_STATUS = 'Не оплачено'
+            """, (current_date,))
+            busy_car_ids = [row[0] for row in cursor.fetchall()]
+
+            # Формируем запрос для свободных машин с точным соответствием уровня тарифа
+            if busy_car_ids:
+                placeholders = ", ".join(["?" for _ in busy_car_ids])
+                sql = f"""
+                    SELECT ID, MODEL
+                    FROM CAR
+                    WHERE TARIFF_CLASS = ?
+                    AND ID NOT IN ({placeholders})
+                """
+                params = [tariff_level] + busy_car_ids
+            else:
+                sql = """
+                    SELECT ID, MODEL
+                    FROM CAR
+                    WHERE TARIFF_CLASS = ?
+                """
+                params = [tariff_level]
+
+            cursor.execute(sql, params)
+            available_cars = cursor.fetchall()
+
+            # Заполняем список доступных машин
+            if available_cars:
+                for car_id, model in available_cars:
+                    self.car_combo.addItem(f"{model} (ID: {car_id})", car_id)
+            else:
+                self.car_combo.addItem("Нет доступных машин", None)
+
+            # Обновляем стоимость после изменения списка машин
+            self.update_cost()
+        except Exception as e:
+            print(f"Ошибка при обновлении списка машин: {e}")
+
+    def update_cost(self):
+        try:
+            distance = float(self.distance_input.text().strip()) if self.distance_input.text().strip() else 0.0
+            tariff_id = self.tariff_combo.currentData() or 0
+            price_per_km, coefficient = self.tariffs_data.get(tariff_id, (0, 1.0))
+            cost = distance * price_per_km * coefficient
             self.cost_label.setText(f"Стоимость: {cost:.2f}")
-            return cost
         except ValueError:
-            QMessageBox.warning(None, "Ошибка", "Введите корректное расстояние (число)")
-            return None
+            self.cost_label.setText("Стоимость: 0.0")
+        except Exception as e:
+            print(f"Ошибка при расчете стоимости: {e}")
 
     def save_order(self):
-        client_name = self.client_name_input.text().strip()
-        phone = self.phone_input.text().strip()
-        driver_id = self.driver_combo.currentData()
-        tariff_id = self.tariff_combo.currentData()
-        order_date = self.date_input.date().toString("yyyy-MM-dd")
-        distance = self.distance_input.text().strip()
-
-        if not all([client_name, phone, driver_id, tariff_id, distance]):
-            QMessageBox.warning(None, "Ошибка", "Заполните все поля")
-            return
-
-        cost = self.calculate_cost()
-        if cost is None:
-            return
-
-        cursor = con.cursor()
         try:
+            client_name = self.client_name_input.text().strip()
+            phone = self.phone_input.text().strip()
+            car_id = self.car_combo.currentData()  # Используем ID машины вместо водителя
+            tariff_id = self.tariff_combo.currentData()
+            order_date = self.date_input.date().toString("yyyy-MM-dd")
+            distance = self.distance_input.text().strip()
+
+            if not all([client_name, phone, car_id, tariff_id, distance]):
+                QMessageBox.warning(None, "Ошибка", "Заполните все поля")
+                return
+
+            cost = float(self.cost_label.text().replace("Стоимость: ", "").strip())
+            if cost <= 0:
+                QMessageBox.warning(None, "Ошибка", "Стоимость должна быть больше 0")
+                return
+
+            cursor = con.cursor()
             # Генерируем новый ID для заказа
             cursor.execute("SELECT MAX(ID) FROM ORDERTABLE")
             max_id = cursor.fetchone()[0]
             new_order_id = (max_id or 0) + 1
 
-            # Отладочный вывод параметров
-            print(f"Parameters for ORDERTABLE: ID={new_order_id}, CLIENT_NAME={client_name}, PHONE={phone}, DRIVER_ID={driver_id}, TARIFF_ID={tariff_id}, ORDER_DATE={order_date}, DISTANCE={float(distance)}")
-            print(f"TARIFF_ID type: {type(tariff_id)}, value: {tariff_id}, length: {len(str(tariff_id))}")
-
-            # Сохраняем заказ
+            # Сохраняем заказ, используя CAR.ID как DRIVER_ID
             sql_order = """
             INSERT INTO ORDERTABLE (ID, CLIENT_NAME, PHONE, DRIVER_ID, TARIFF_ID, ORDER_DATE, DISTANCE)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """
-            cursor.execute(sql_order, (new_order_id, client_name, phone, driver_id, int(tariff_id), order_date, float(distance)))
+            cursor.execute(sql_order, (new_order_id, client_name, phone, car_id, int(tariff_id), order_date, float(distance)))
 
             # Создаем запись оплаты с статусом "Не оплачено"
             cursor.execute("SELECT MAX(ID) FROM PAYMENT")
@@ -222,64 +300,41 @@ class MainWindow(QMainWindow):
             con.rollback()
             QMessageBox.critical(None, "Ошибка", f"Ошибка сохранения: {str(e)}")
 
-    def process_payment(self):
-        client_name = self.client_name_input.text().strip()
-        phone = self.phone_input.text().strip()
-        driver_id = self.driver_combo.currentData()
-        tariff_id = self.tariff_combo.currentData()
-        order_date = self.date_input.date().toString("yyyy-MM-dd")
-        distance = self.distance_input.text().strip()
-
-        if not all([client_name, phone, driver_id, tariff_id, distance]):
-            QMessageBox.warning(None, "Ошибка", "Заполните все поля перед оплатой")
+    def process_payment_from_table(self, table_name):
+        if table_name != "ORDERTABLE":
             return
 
-        cost = self.calculate_cost()
-        if cost is None:
-            return
-
-        cursor = con.cursor()
         try:
-            # Проверяем, сохранен ли заказ
-            cursor.execute("SELECT MAX(ID) FROM ORDERTABLE")
-            max_order_id = cursor.fetchone()[0]
-            if max_order_id is None:
-                max_order_id = 0
-            order_id = max_order_id + 1
+            model, table_view = self.tables[table_name]
+            selected = table_view.selectionModel().selectedRows()
+            if not selected:
+                QMessageBox.warning(None, "Предупреждение", "Выберите заказ для оплаты")
+                return
 
-            # Если заказ не сохранен, сохраняем его
-            cursor.execute("SELECT COUNT(*) FROM ORDERTABLE WHERE ID = ?", (order_id,))
-            if cursor.fetchone()[0] == 0:
-                sql = """
-                INSERT INTO ORDERTABLE (ID, CLIENT_NAME, PHONE, DRIVER_ID, TARIFF_ID, ORDER_DATE, DISTANCE)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """
-                cursor.execute(sql, (order_id, client_name, phone, driver_id, int(tariff_id), order_date, float(distance)))
+            order_id = model.item(selected[0].row(), 0).text().strip()
+            cursor = con.cursor()
+            # Получаем данные заказа для расчета стоимости
+            cursor.execute("SELECT TARIFF_ID, DISTANCE FROM ORDERTABLE WHERE ID = ?", (order_id,))
+            row = cursor.fetchone()
+            if not row:
+                QMessageBox.warning(None, "Ошибка", "Заказ не найден")
+                return
+            tariff_id, distance = row
+            cursor.execute("SELECT PRICE_PER_KM, COEFFICIENT FROM TARIFF WHERE ID = ?", (tariff_id,))
+            price_per_km, coefficient = cursor.fetchone() or (0, 1.0)
+            cost = float(distance) * float(price_per_km) * float(coefficient)
 
-                # Создаем запись оплаты с статусом "Не оплачено"
-                cursor.execute("SELECT MAX(ID) FROM PAYMENT")
-                max_payment_id = cursor.fetchone()[0]
-                new_payment_id = (max_payment_id or 0) + 1
-
-                payment_date = date.today().strftime("%Y-%m-%d")
-                sql_payment = """
-                INSERT INTO PAYMENT (ID, ORDER_ID, AMOUNT, PAID_DATE, PAYMENT_STATUS)
-                VALUES (?, ?, ?, ?, ?)
-                """
-                cursor.execute(sql_payment, (new_payment_id, order_id, cost, payment_date, "Не оплачено"))
-
-            # Обновляем статус оплаты на "Оплачено"
-            cursor.execute("SELECT ID FROM PAYMENT WHERE ORDER_ID = ? AND PAYMENT_STATUS = 'Не оплачено'", (order_id,))
-            payment_id = cursor.fetchone()
-            if payment_id:
-                payment_id = payment_id[0]
+            # Проверяем, есть ли запись оплаты
+            cursor.execute("SELECT ID, AMOUNT FROM PAYMENT WHERE ORDER_ID = ? AND PAYMENT_STATUS = 'Не оплачено'", (order_id,))
+            payment = cursor.fetchone()
+            if payment:
+                payment_id = payment[0]
                 payment_date = date.today().strftime("%Y-%m-%d")
                 sql_update = """
                 UPDATE PAYMENT SET AMOUNT = ?, PAID_DATE = ?, PAYMENT_STATUS = ? WHERE ID = ?
                 """
                 cursor.execute(sql_update, (cost, payment_date, "Оплачено", payment_id))
             else:
-                # Если записи "Не оплачено" нет, создаем новую с "Оплачено"
                 cursor.execute("SELECT MAX(ID) FROM PAYMENT")
                 max_payment_id = cursor.fetchone()[0]
                 new_payment_id = (max_payment_id or 0) + 1
@@ -293,40 +348,34 @@ class MainWindow(QMainWindow):
             con.commit()
 
             # Обновляем таблицы
-            order_model, _ = self.tables["ORDERTABLE"]
+            self.load_data("ORDERTABLE", model)
             payment_model, _ = self.tables["PAYMENT"]
-            self.load_data("ORDERTABLE", order_model)
             self.load_data("PAYMENT", payment_model)
 
-            # Очищаем форму
-            self.client_name_input.clear()
-            self.phone_input.clear()
-            self.distance_input.clear()
-            self.cost_label.setText("Стоимость: 0.0")
-
-            QMessageBox.information(None, "Успех", "Оплата успешно обработана (статус: Оплачено)")
+            QMessageBox.information(None, "Успех", f"Заказ {order_id} успешно оплачен (статус: Оплачено)")
         except Exception as e:
             con.rollback()
-            QMessageBox.critical(None, "Ошибка", f"Ошибка обработки оплаты: {str(e)}")
+            QMessageBox.critical(None, "Ошибка", f"Ошибка оплаты: {str(e)}")
 
     def pay_with_card(self):
-        client_name = self.client_name_input.text().strip()
-        phone = self.phone_input.text().strip()
-        driver_id = self.driver_combo.currentData()
-        tariff_id = self.tariff_combo.currentData()
-        order_date = self.date_input.date().toString("yyyy-MM-dd")
-        distance = self.distance_input.text().strip()
-
-        if not all([client_name, phone, driver_id, tariff_id, distance]):
-            QMessageBox.warning(None, "Ошибка", "Заполните все поля перед оплатой")
-            return
-
-        cost = self.calculate_cost()
-        if cost is None:
-            return
-
-        cursor = con.cursor()
         try:
+            client_name = self.client_name_input.text().strip()
+            phone = self.phone_input.text().strip()
+            car_id = self.car_combo.currentData()  # Используем ID машины вместо водителя
+            tariff_id = self.tariff_combo.currentData()
+            order_date = self.date_input.date().toString("yyyy-MM-dd")
+            distance = self.distance_input.text().strip()
+
+            if not all([client_name, phone, car_id, tariff_id, distance]):
+                QMessageBox.warning(None, "Ошибка", "Заполните все поля перед оплатой")
+                return
+
+            cost = float(self.cost_label.text().replace("Стоимость: ", "").strip())
+            if cost <= 0:
+                QMessageBox.warning(None, "Ошибка", "Стоимость должна быть больше 0")
+                return
+
+            cursor = con.cursor()
             # Проверяем, сохранен ли заказ
             cursor.execute("SELECT MAX(ID) FROM ORDERTABLE")
             max_order_id = cursor.fetchone()[0]
@@ -341,7 +390,7 @@ class MainWindow(QMainWindow):
                 INSERT INTO ORDERTABLE (ID, CLIENT_NAME, PHONE, DRIVER_ID, TARIFF_ID, ORDER_DATE, DISTANCE)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """
-                cursor.execute(sql, (order_id, client_name, phone, driver_id, int(tariff_id), order_date, float(distance)))
+                cursor.execute(sql, (order_id, client_name, phone, car_id, int(tariff_id), order_date, float(distance)))
 
                 # Создаем запись оплаты с статусом "Не оплачено"
                 cursor.execute("SELECT MAX(ID) FROM PAYMENT")
@@ -397,8 +446,8 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(None, "Ошибка", f"Ошибка оплаты картой: {str(e)}")
 
     def load_data(self, table_name, model):
-        cursor = con.cursor()
         try:
+            cursor = con.cursor()
             cursor.execute(f"SELECT * FROM {table_name}")
             rows = cursor.fetchall()
             if rows:
@@ -418,23 +467,44 @@ class MainWindow(QMainWindow):
                 model.setHorizontalHeaderLabels(columns)
                 model.setRowCount(0)
         except Exception as e:
-            QMessageBox.critical(None, "Ошибка загрузки", f"Ошибка при загрузке данных: {str(e)}")
+            print(f"Ошибка при загрузке данных из таблицы {table_name}: {e}")
+            sys.exit(1)
 
     def add_row(self, table_name):
-        model, _ = self.tables[table_name]
-        num_columns = model.columnCount()
-        if num_columns == 0:
-            return
-        row = [QStandardItem("") for _ in range(num_columns)]
-        for item in row:
-            item.setEditable(True)
-        model.appendRow(row)
+        try:
+            model, _ = self.tables[table_name]
+            num_columns = model.columnCount()  # Фактическое количество столбцов в базе данных
+            row = []
+            for col in range(num_columns):
+                item = QStandardItem("")
+                item.setEditable(True)
+                row.append(item)
+
+            # Для таблицы CAR заменяем последний столбец (TARIFF_CLASS) на выпадающий список
+            if table_name == "CAR":
+                class_combo = QComboBox()
+                class_combo.addItems(["Стандарт (1)", "Комфорт (2)", "Бизнес (3)"])
+                class_combo.setCurrentIndex(-1)
+                row[num_columns - 1] = QStandardItem("(выберите класс тарифа)")
+                row[num_columns - 1].setData(class_combo, Qt.UserRole)
+
+            model.appendRow(row)
+
+            # Устанавливаем выпадающий список в ячейку столбца TARIFF_CLASS
+            if table_name == "CAR":
+                table_view = self.tables[table_name][1]
+                table_view.setIndexWidget(
+                    model.index(model.rowCount() - 1, num_columns - 1),
+                    row[num_columns - 1].data(Qt.UserRole)
+                )
+        except Exception as e:
+            print(f"Ошибка при добавлении строки в таблицу {table_name}: {e}")
 
     def save_changes(self, list_name):
-        model, _ = self.tables[list_name]
-        cursor = con.cursor()
-
         try:
+            model, _ = self.tables[list_name]
+            cursor = con.cursor()
+
             columns = [model.headerData(col, Qt.Horizontal) for col in range(model.columnCount())]
             if not columns:
                 QMessageBox.warning(None, "Предупреждение", "Нет столбцов для сохранения")
@@ -446,8 +516,17 @@ class MainWindow(QMainWindow):
                 for col in range(model.columnCount()):
                     item = model.item(row, col)
                     value = item.text().strip() if item else ""
+                    if col == model.columnCount() - 1 and list_name == "CAR":
+                        # Для последнего столбца CAR (TARIFF_CLASS) получаем значение из выпадающего списка
+                        combo = item.data(Qt.UserRole) if item else None
+                        if combo:
+                            class_text = combo.currentText()
+                            if class_text != "" and class_text != "(выберите класс тарифа)":
+                                value = int(class_text.split("(")[1].replace(")", "").strip())
+                            else:
+                                value = None
                     row_data.append(value if value != "" else None)
-                    if value != "":
+                    if value != "" and value != "(выберите класс тарифа)":
                         all_empty = False
 
                 if all_empty:
@@ -482,6 +561,7 @@ class MainWindow(QMainWindow):
                 cursor.execute(sql, row_data)
 
             con.commit()
+
             self.load_data(list_name, model)
             QMessageBox.information(None, "Успех", "Изменения успешно сохранены")
         except Exception as e:
@@ -489,38 +569,44 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(None, "Ошибка", f"Ошибка сохранения: {str(e)}")
 
     def delete_row(self, table_name):
-        model, table_view = self.tables[table_name]
-        selected = table_view.selectionModel().selectedRows()
+        try:
+            model, table_view = self.tables[table_name]
+            selected = table_view.selectionModel().selectedRows()
 
-        if not selected:
-            QMessageBox.warning(None, "Предупреждение", "Выберите строку для удаления")
-            return
+            if not selected:
+                QMessageBox.warning(None, "Предупреждение", "Выберите строку для удаления")
+                return
 
-        reply = QMessageBox.question(
-            None, "Подтверждение",
-            "Вы уверены, что хотите удалить выбранную строку?",
-            QMessageBox.Yes | QMessageBox.No
-        )
+            reply = QMessageBox.question(
+                None, "Подтверждение",
+                "Вы уверены, что хотите удалить выбранную строку?",
+                QMessageBox.Yes | QMessageBox.No
+            )
 
-        if reply == QMessageBox.Yes:
-            cursor = con.cursor()
-            try:
+            if reply == QMessageBox.Yes:
+                cursor = con.cursor()
                 for index in selected:
                     row = index.row()
                     id_item = model.item(row, 0)
                     if id_item and id_item.text().strip():
-                        cursor.execute(f"DELETE FROM {table_name} WHERE ID = ?", (id_item.text().strip(),))
+                        id_value = id_item.text().strip()
+                        cursor.execute(f"DELETE FROM {table_name} WHERE ID = ?", (id_value,))
                         model.removeRow(row)
 
                 con.commit()
+
                 self.load_data(table_name, model)
                 QMessageBox.information(None, "Успех", "Строка успешно удалена")
-            except Exception as e:
-                con.rollback()
-                QMessageBox.critical(None, "Ошибка", f"Ошибка удаления: {str(e)}")
+        except Exception as e:
+            con.rollback()
+            QMessageBox.critical(None, "Ошибка", f"Ошибка удаления: {str(e)}")
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec_())
+    try:
+        app = QApplication(sys.argv)
+        window = MainWindow()
+        window.show()
+        sys.exit(app.exec_())
+    except Exception as e:
+        print(f"Ошибка при запуске приложения: {e}")
+        sys.exit(1)
