@@ -74,6 +74,10 @@ class MainWindow(QMainWindow):
             # Сохраняем ссылки на модель и представление
             self.tables[table_name] = (model, table_view)
 
+            # Добавляем выпадающий список для статуса оплаты в таблице платежей
+            if table_name == "PAYMENT":
+                self.setup_payment_status_combo(table_name)
+
             # Настройка кнопок
             button_layout = QHBoxLayout()
             add_button = QPushButton("Add")
@@ -99,6 +103,30 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Ошибка при настройке таблицы {table_name}: {e}")
             sys.exit(1)
+
+    def setup_payment_status_combo(self, table_name):
+        try:
+            if table_name not in self.tables:
+                raise KeyError(f"Таблица {table_name} не найдена в self.tables")
+            
+            model, table_view = self.tables[table_name]
+            payment_status_index = 4  # Индекс столбца PAYMENT_STATUS (нумерация с 0, после скрытия ID)
+            for row in range(model.rowCount()):
+                combo = QComboBox()
+                combo.addItems(["Не оплачено", "Оплачено"])
+                current_status = model.item(row, payment_status_index).text()
+                combo.setCurrentText(current_status if current_status in ["Не оплачено", "Оплачено"] else "Не оплачено")
+                table_view.setIndexWidget(model.index(row, payment_status_index), combo)
+                combo.currentTextChanged.connect(lambda text, r=row, c=payment_status_index: self.update_status(model, r, c, text))
+        except Exception as e:
+            print(f"Ошибка при установке выпадающих списков для {table_name}: {e}")
+            raise
+
+    def update_status(self, model, row, column, text):
+        # Обновляем модель при изменении статуса
+        item = QStandardItem(text)
+        item.setEditable(False)
+        model.setItem(row, column, item)
 
     def setup_order_form(self, tab_widget):
         try:
@@ -501,14 +529,29 @@ class MainWindow(QMainWindow):
                 class_combo.setCurrentIndex(-1)
                 row[num_columns - 1] = QStandardItem("(выберите класс тарифа)")
                 row[num_columns - 1].setData(class_combo, Qt.UserRole)
+            # Для таблицы PAYMENT добавляем выпадающий список для PAYMENT_STATUS
+            elif table_name == "PAYMENT":
+                status_combo = QComboBox()
+                status_combo.addItems(["Не оплачено", "Оплачено"])
+                status_combo.setCurrentIndex(0)  # По умолчанию "Не оплачено"
+                row[4] = QStandardItem("Не оплачено")  # Индекс 4 для PAYMENT_STATUS (с учетом скрытого ID)
+                row[4].setData(status_combo, Qt.UserRole)
 
             model.appendRow(row)
 
-            # Устанавливаем выпадающий список в ячейку столбца TARIFF_CLASS
+            # Устанавливаем выпадающий список в ячейку
             if table_name == "CAR":
                 table_view.setIndexWidget(
                     model.index(model.rowCount() - 1, num_columns - 1),
                     row[num_columns - 1].data(Qt.UserRole)
+                )
+            elif table_name == "PAYMENT":
+                table_view.setIndexWidget(
+                    model.index(model.rowCount() - 1, 4),
+                    row[4].data(Qt.UserRole)
+                )
+                row[4].data(Qt.UserRole).currentTextChanged.connect(
+                    lambda text, r=model.rowCount() - 1, c=4: self.update_status(model, r, c, text)
                 )
         except Exception as e:
             print(f"Ошибка при добавлении строки в таблицу {table_name}: {e}")
@@ -581,6 +624,11 @@ class MainWindow(QMainWindow):
             con.commit()
 
             self.load_data(list_name, model)
+            
+            # Восстанавливаем выпадающие списки для PAYMENT после перезагрузки данных
+            if list_name == "PAYMENT":
+                self.setup_payment_status_combo(list_name)
+                
             QMessageBox.information(None, "Успех", "Изменения успешно сохранены")
         except Exception as e:
             con.rollback()
@@ -614,6 +662,11 @@ class MainWindow(QMainWindow):
                 con.commit()
 
                 self.load_data(table_name, model)
+                
+                # Восстанавливаем выпадающие списки для PAYMENT после удаления
+                if table_name == "PAYMENT":
+                    self.setup_payment_status_combo(table_name)
+                    
                 QMessageBox.information(None, "Успех", "Строка успешно удалена")
         except Exception as e:
             con.rollback()
