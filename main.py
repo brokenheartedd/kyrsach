@@ -68,6 +68,9 @@ class MainWindow(QMainWindow):
             table_view.setModel(model)
             table_view.resizeColumnsToContents()
 
+            # Скрываем столбец ID (первый столбец)
+            table_view.setColumnHidden(0, True)
+
             # Сохраняем ссылки на модель и представление
             self.tables[table_name] = (model, table_view)
 
@@ -117,7 +120,7 @@ class MainWindow(QMainWindow):
             self.tariffs_data = {tariff[0]: (tariff[2], tariff[3] if tariff[3] is not None else 1.0) for tariff in tariffs}  # PRICE_PER_KM, COEFFICIENT
             self.all_tariffs = tariffs
             for tariff in tariffs:
-                self.tariff_combo.addItem(f"{tariff[1]} (ID: {tariff[0]})", tariff[0])
+                self.tariff_combo.addItem(tariff[1], tariff[0])  # Показываем NAME, сохраняем ID
 
             # Выпадающий список для выбора машины
             self.car_combo = QComboBox()
@@ -217,7 +220,7 @@ class MainWindow(QMainWindow):
             # Заполняем список доступных машин
             if available_cars:
                 for car_id, model in available_cars:
-                    self.car_combo.addItem(f"{model} (ID: {car_id})", car_id)
+                    self.car_combo.addItem(model, car_id)  # Показываем MODEL, сохраняем ID
             else:
                 self.car_combo.addItem("Нет доступных машин", None)
 
@@ -311,6 +314,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(None, "Предупреждение", "Выберите заказ для оплаты")
                 return
 
+            # ID находится в скрытом столбце (индекс 0)
             order_id = model.item(selected[0].row(), 0).text().strip()
             cursor = con.cursor()
             # Получаем данные заказа для расчета стоимости
@@ -452,7 +456,7 @@ class MainWindow(QMainWindow):
             rows = cursor.fetchall()
             if rows:
                 columns = [desc[0] for desc in cursor.description]
-                model.setHorizontalHeaderLabels(columns)
+                model.setHorizontalHeaderLabels(columns)  # Загружаем все заголовки, включая ID
                 model.setRowCount(0)  # Очищаем модель перед загрузкой
                 for row_idx, row in enumerate(rows):
                     items = []
@@ -472,10 +476,20 @@ class MainWindow(QMainWindow):
 
     def add_row(self, table_name):
         try:
-            model, _ = self.tables[table_name]
-            num_columns = model.columnCount()  # Фактическое количество столбцов в базе данных
+            model, table_view = self.tables[table_name]
+            # Количество столбцов в базе данных (включая скрытый ID)
+            cursor = con.cursor()
+            cursor.execute(f"SELECT * FROM {table_name} WHERE 1=0")
+            num_columns = len([desc[0] for desc in cursor.description])
+            
             row = []
-            for col in range(num_columns):
+            # Добавляем пустой элемент для скрытого столбца ID
+            item_id = QStandardItem("")
+            item_id.setEditable(False)  # ID не редактируется
+            row.append(item_id)
+            
+            # Добавляем элементы для остальных столбцов
+            for col in range(num_columns - 1):  # -1, так как ID уже добавлен
                 item = QStandardItem("")
                 item.setEditable(True)
                 row.append(item)
@@ -492,7 +506,6 @@ class MainWindow(QMainWindow):
 
             # Устанавливаем выпадающий список в ячейку столбца TARIFF_CLASS
             if table_name == "CAR":
-                table_view = self.tables[table_name][1]
                 table_view.setIndexWidget(
                     model.index(model.rowCount() - 1, num_columns - 1),
                     row[num_columns - 1].data(Qt.UserRole)
@@ -505,7 +518,10 @@ class MainWindow(QMainWindow):
             model, _ = self.tables[list_name]
             cursor = con.cursor()
 
-            columns = [model.headerData(col, Qt.Horizontal) for col in range(model.columnCount())]
+            # Получаем все столбцы из базы данных (включая ID)
+            cursor.execute(f"SELECT * FROM {list_name} WHERE 1=0")
+            columns = [desc[0] for desc in cursor.description]
+
             if not columns:
                 QMessageBox.warning(None, "Предупреждение", "Нет столбцов для сохранения")
                 return
@@ -526,19 +542,21 @@ class MainWindow(QMainWindow):
                             else:
                                 value = None
                     row_data.append(value if value != "" else None)
-                    if value != "" and value != "(выберите класс тарифа)":
+                    if col > 0 and value != "" and value != "(выберите класс тарифа)":
                         all_empty = False
 
                 if all_empty:
                     continue
 
                 # Проверяем, существует ли строка с таким ID в базе
-                id_value = row_data[0]
-                cursor.execute(f"SELECT COUNT(*) FROM {list_name} WHERE ID = ?", (id_value,))
-                exists = cursor.fetchone()[0] > 0
+                id_value = row_data[0]  # ID находится в скрытом столбце
+                exists = False
+                if id_value:
+                    cursor.execute(f"SELECT COUNT(*) FROM {list_name} WHERE ID = ?", (id_value,))
+                    exists = cursor.fetchone()[0] > 0
 
                 if not exists:
-                    # Новая строка - используем INSERT
+                    # Новая строка - генерируем ID
                     cursor.execute(f"SELECT MAX(ID) FROM {list_name}")
                     max_id = cursor.fetchone()[0]
                     new_id = (max_id or 0) + 1
@@ -549,7 +567,7 @@ class MainWindow(QMainWindow):
                             break
                         new_id += 1
 
-                    row_data[0] = str(new_id)
+                    row_data[0] = new_id
                     placeholders = ", ".join(["?"] * len(columns))
                     sql = f"INSERT INTO {list_name} ({', '.join(columns)}) VALUES ({placeholders})"
                 else:
@@ -587,7 +605,7 @@ class MainWindow(QMainWindow):
                 cursor = con.cursor()
                 for index in selected:
                     row = index.row()
-                    id_item = model.item(row, 0)
+                    id_item = model.item(row, 0)  # ID в скрытом столбце
                     if id_item and id_item.text().strip():
                         id_value = id_item.text().strip()
                         cursor.execute(f"DELETE FROM {table_name} WHERE ID = ?", (id_value,))
