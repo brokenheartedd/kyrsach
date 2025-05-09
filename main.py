@@ -1,9 +1,10 @@
 import sys
 import os
+import configparser
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QWidget,
-    QVBoxLayout, QTableView, QAbstractItemView,
+    QVBoxLayout, QTableView, QAbstractItemView, QTableWidget, QTableWidgetItem,
     QPushButton, QHBoxLayout, QMessageBox, QFormLayout,
     QLineEdit, QComboBox, QDateEdit, QLabel
 )
@@ -11,20 +12,45 @@ from PyQt5.QtGui import QStandardItemModel, QStandardItem
 import fdb
 from datetime import date
 
+# Load database path from config.ini
+config = configparser.ConfigParser()
+config.read('config.ini')
+db_path = config.get('GENERAL', 'db_path', fallback='')
+
 try:
     # Подключение к базе данных
     con = fdb.connect(
-        dsn='C:/Program Files/RedDatabase/TAXOPARK',
+        dsn=db_path,
         user='SYSDBA',
         password='masterkey',
+        charset='UTF8',
     )
 except Exception as e:
     print(f"Ошибка подключения к базе данных: {e}")
     sys.exit(1)
 
+# class ComboBoxDelegate(QStyledItemDelegate):
+#     def __init__(self, items_map, parent=None):
+#         super().__init__(parent)
+#         self.items_map = items_map  # {текст: значение}
+
+#     def createEditor(self, parent, option, index):
+#         combo = QComboBox(parent)
+#         combo.addItems(self.items_map.keys())
+#         return combo
+
+#     def setEditorData(self, editor, index):
+#         value = index.model().data(index, Qt.EditRole)
+#         i = editor.findText(value)
+#         if i >= 0:
+#             editor.setCurrentIndex(i)
+
+#     def setModelData(self, editor, model, index):
+#         model.setData(index, editor.currentText(), Qt.EditRole)
+
 class MainWindow(QMainWindow):
     def __init__(self):
-        try:
+        # try:
             super().__init__()
             self.setWindowTitle("Таксопарк 666")
             self.setGeometry(100, 100, 800, 600)
@@ -40,43 +66,50 @@ class MainWindow(QMainWindow):
             }
 
             # Настройка вкладок
+            self.setup_table(tab_widget, "Заказы", "ORDERTABLE")
             self.setup_table(tab_widget, "Машины", "CAR")
             self.setup_table(tab_widget, "Водители", "DRIVER")
-            self.setup_table(tab_widget, "Заказы", "ORDERTABLE")
             self.setup_table(tab_widget, "Платежи", "PAYMENT")
             self.setup_table(tab_widget, "Тарифы", "TARIFF")
             self.setup_order_form(tab_widget)
-        except Exception as e:
-            print(f"Ошибка при инициализации окна: {e}")
-            sys.exit(1)
+        # except Exception as e:
+        #     print(f"Ошибка при инициализации окна: {e}")
+        #     sys.exit(1)
 
     def setup_table(self, tab_widget, tab_name, table_name):
         try:
             tab = QWidget()
             layout = QVBoxLayout()
-            table_view = QTableView()
-            table_view.setEditTriggers(QAbstractItemView.DoubleClicked)
-            table_view.setSelectionMode(QAbstractItemView.SingleSelection)
-            table_view.setSelectionBehavior(QAbstractItemView.SelectRows)
-
-            # Инициализация модели
-            model = QStandardItemModel()
             
-            # Загрузка данных из базы
-            self.load_data(table_name, model)
+            # Создаем QTableWidget вместо QTableView
+            table_widget = QTableWidget()
+            table_widget.setEditTriggers(QAbstractItemView.DoubleClicked)
+            table_widget.setSelectionMode(QAbstractItemView.SingleSelection)
+            table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
 
-            table_view.setModel(model)
-            table_view.resizeColumnsToContents()
+            # Загружаем данные в table_widget напрямую
+            self.load_data(table_name, table_widget)
+
+            # Добавляем в layout
+            layout.addWidget(table_widget)
+            tab.setLayout(layout)
+            self.tables[table_name] = table_widget  # Сохраняем ссылку на QTableWidget
+
+            # Добавляем вкладку в QTabWidget
+            tab_widget.addTab(tab, tab_name)
+
+            # return
 
             # Скрываем столбец ID (первый столбец)
-            table_view.setColumnHidden(0, True)
+            # table_view.setColumnHidden(0, True)
 
             # Сохраняем ссылки на модель и представление
-            self.tables[table_name] = (model, table_view)
+            # self.tables[table_name] = (model, table_view)
 
             # Добавляем выпадающий список для статуса оплаты в таблице платежей
-            if table_name == "PAYMENT":
-                self.setup_payment_status_combo(table_name)
+            # if table_name == "PAYMENT":
+                # self.setup_payment_status_combo(table_name)
+                 
 
             # Настройка кнопок
             button_layout = QHBoxLayout()
@@ -97,7 +130,7 @@ class MainWindow(QMainWindow):
             button_layout.addWidget(delete_button)
 
             layout.addLayout(button_layout)
-            layout.addWidget(table_view)
+            # layout.addWidget(table_view)
             tab.setLayout(layout)
             tab_widget.addTab(tab, tab_name)
         except Exception as e:
@@ -129,7 +162,7 @@ class MainWindow(QMainWindow):
         model.setItem(row, column, item)
 
     def setup_order_form(self, tab_widget):
-        try:
+        # try:
             tab = QWidget()
             layout = QVBoxLayout()
 
@@ -143,9 +176,9 @@ class MainWindow(QMainWindow):
             # Выпадающий список для выбора тарифа
             self.tariff_combo = QComboBox()
             cursor = con.cursor()
-            cursor.execute("SELECT ID, NAME, PRICE_PER_KM, COEFFICIENT FROM TARIFF")
+            cursor.execute("SELECT ID, NAME, PRICE_PER_KM FROM TARIFF")
             tariffs = cursor.fetchall()
-            self.tariffs_data = {tariff[0]: (tariff[2], tariff[3] if tariff[3] is not None else 1.0) for tariff in tariffs}  # PRICE_PER_KM, COEFFICIENT
+            # self.tariffs_data = {tariff[0]: (tariff[2], tariff[3] if tariff[3] is not None else 1.0) for tariff in tariffs}  # PRICE_PER_KM, COEFFICIENT
             self.all_tariffs = tariffs
             for tariff in tariffs:
                 self.tariff_combo.addItem(tariff[1], tariff[0])  # Показываем NAME, сохраняем ID
@@ -194,9 +227,9 @@ class MainWindow(QMainWindow):
             self.tariff_combo.currentTextChanged.connect(self.update_cost)
             # Подключение обновления списка машин при смене тарифа
             self.tariff_combo.currentIndexChanged.connect(self.update_car_combo)
-        except Exception as e:
-            print(f"Ошибка при настройке формы заказа: {e}")
-            sys.exit(1)
+        # except Exception as e:
+        #     print(f"Ошибка при настройке формы заказа: {e}")
+        #     sys.exit(1)
 
     def update_car_combo(self):
         try:
@@ -477,32 +510,96 @@ class MainWindow(QMainWindow):
             con.rollback()
             QMessageBox.critical(None, "Ошибка", f"Ошибка оплаты картой: {str(e)}")
 
-    def load_data(self, table_name, model):
+    def load_data(self, table_name, table_widget):
         try:
             cursor = con.cursor()
-            cursor.execute(f"SELECT * FROM {table_name}")
+            if table_name == "CAR":
+                cursor.execute("""
+                    SELECT CAR.ID, MODEL, LICENSE_PLATE, DRIVER.FULL_NAME, TARIFF.NAME 
+                    FROM CAR
+                    JOIN DRIVER ON CAR.DRIVER_ID = DRIVER.ID
+                    JOIN TARIFF ON CAR.TARIFF_ID = TARIFF.ID
+                """)
+            else:
+                cursor.execute(f"SELECT * FROM {table_name}")
+
             rows = cursor.fetchall()
+
             if rows:
                 columns = [desc[0] for desc in cursor.description]
-                model.setHorizontalHeaderLabels(columns)  # Загружаем все заголовки, включая ID
-                model.setRowCount(0)  # Очищаем модель перед загрузкой
+                table_widget.setColumnCount(len(columns))
+                table_widget.setHorizontalHeaderLabels(columns)
+                table_widget.setRowCount(len(rows))
+
+                # Загружаем данные для выпадающих списков
+                cursor.execute("SELECT FULL_NAME FROM DRIVER")
+                driver_list = [row[0] for row in cursor.fetchall()]
+                cursor.execute("SELECT NAME FROM TARIFF")
+                tariff_list = [row[0] for row in cursor.fetchall()]
+
                 for row_idx, row in enumerate(rows):
-                    items = []
-                    for value in row:
-                        item = QStandardItem(str(value) if value is not None else "")
-                        item.setEditable(True)
-                        items.append(item)
-                    model.appendRow(items)
+                    for col_idx, value in enumerate(row):
+                        if table_name == "CAR" and col_idx == 3:  # DRIVER
+                            combo = QComboBox()
+                            combo.addItems(driver_list)
+                            combo.setCurrentText(str(value))
+                            table_widget.setCellWidget(row_idx, col_idx, combo)
+                        elif table_name == "CAR" and col_idx == 4:  # TARIFF
+                            combo = QComboBox()
+                            combo.addItems(tariff_list)
+                            combo.setCurrentText(str(value))
+                            table_widget.setCellWidget(row_idx, col_idx, combo)
+                        else:
+                            item = QTableWidgetItem(str(value))
+                            item.setFlags(item.flags() | Qt.ItemIsEditable)
+                            table_widget.setItem(row_idx, col_idx, item)
             else:
-                cursor.execute(f"SELECT * FROM {table_name} WHERE 1=0")  # Получаем структуру таблицы
-                columns = [desc[0] for desc in cursor.description]
-                model.setHorizontalHeaderLabels(columns)
-                model.setRowCount(0)
+                table_widget.setRowCount(0)
+                table_widget.setColumnCount(0)
+
         except Exception as e:
             print(f"Ошибка при загрузке данных из таблицы {table_name}: {e}")
             sys.exit(1)
 
     def add_row(self, table_name):
+        try:
+
+            table_widget  = self.tables[table_name]
+            row_pos = table_widget.rowCount()
+            table_widget.insertRow(row_pos)
+
+            col_count = table_widget.columnCount()
+
+            for col in range(col_count):
+                if table_name == "CAR":
+                    if col == 3:  # Столбец Водитель
+                        combo = QComboBox()
+                        cursor = con.cursor()
+                        cursor.execute("SELECT FULL_NAME FROM DRIVER")
+                        drivers = [row[0] for row in cursor.fetchall()]
+                        combo.addItems(drivers)
+                        table_widget.setCellWidget(row_pos, col, combo)
+
+                    elif col == 4:  # Столбец Тариф
+                        combo = QComboBox()
+                        cursor = con.cursor()
+                        cursor.execute("SELECT NAME FROM TARIFF")
+                        tariffs = [row[0] for row in cursor.fetchall()]
+                        combo.addItems(tariffs)
+                        table_widget.setCellWidget(row_pos, col, combo)
+
+                    else:
+                        item = QTableWidgetItem("")
+                        table_widget.setItem(row_pos, col, item)
+
+                else:
+                    item = QTableWidgetItem("")
+                    table_widget.setItem(row_pos, col, item)
+
+        except Exception as e:
+            print(f"Ошибка при добавлении строки в таблицу {table_name}: {e}")
+
+    def add_row_old(self, table_name):
         try:
             model, table_view = self.tables[table_name]
             # Количество столбцов в базе данных (включая скрытый ID)
@@ -524,11 +621,23 @@ class MainWindow(QMainWindow):
 
             # Для таблицы CAR заменяем последний столбец (TARIFF_CLASS) на выпадающий список
             if table_name == "CAR":
-                class_combo = QComboBox()
-                class_combo.addItems(["Стандарт (1)", "Комфорт (2)", "Бизнес (3)"])
-                class_combo.setCurrentIndex(-1)
-                row[num_columns - 1] = QStandardItem("(выберите класс тарифа)")
-                row[num_columns - 1].setData(class_combo, Qt.UserRole)
+                # Выпадающий список для имени водителя
+                driver_combo = QComboBox()
+                cursor.execute("SELECT ID, FULL_NAME FROM DRIVER")
+                drivers = cursor.fetchall()
+                for driver_id, full_name in drivers:
+                    driver_combo.addItem(full_name, driver_id)
+                row[3] = QStandardItem("(выберите водителя)")
+                row[3].setData(driver_combo, Qt.UserRole)
+
+                # Выпадающий список для тарифа
+                tariff_combo = QComboBox()
+                cursor.execute("SELECT ID, NAME FROM TARIFF")
+                tariffs = cursor.fetchall()
+                for tariff_id, name in tariffs:
+                    tariff_combo.addItem(name, tariff_id)
+                row[4] = QStandardItem("(выберите тариф)")
+                row[4].setData(tariff_combo, Qt.UserRole)
             # Для таблицы PAYMENT добавляем выпадающий список для PAYMENT_STATUS
             elif table_name == "PAYMENT":
                 status_combo = QComboBox()
@@ -542,9 +651,13 @@ class MainWindow(QMainWindow):
             # Устанавливаем выпадающий список в ячейку
             if table_name == "CAR":
                 table_view.setIndexWidget(
-                    model.index(model.rowCount() - 1, num_columns - 1),
-                    row[num_columns - 1].data(Qt.UserRole)
+                    model.index(model.rowCount() - 1, 3),
+                    row[3].data(Qt.UserRole)
                 )
+                table_view.setIndexWidget(
+                    model.index(model.rowCount() - 1, 4),
+                    row[4].data(Qt.UserRole)
+                )                
             elif table_name == "PAYMENT":
                 table_view.setIndexWidget(
                     model.index(model.rowCount() - 1, 4),
@@ -673,11 +786,11 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(None, "Ошибка", f"Ошибка удаления: {str(e)}")
 
 if __name__ == "__main__":
-    try:
+    # try:
         app = QApplication(sys.argv)
         window = MainWindow()
         window.show()
         sys.exit(app.exec_())
-    except Exception as e:
-        print(f"Ошибка при запуске приложения: {e}")
-        sys.exit(1)
+    # except Exception as e:
+    #     print(f"Ошибка при запуске приложения: {e}")
+    #     sys.exit(1)
