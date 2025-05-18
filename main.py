@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QTableWidget, QTableWidgetItem,
     QAbstractItemView, QPushButton, QHBoxLayout,
     QMessageBox, QFormLayout, QLineEdit, QComboBox,
-    QDateEdit, QLabel
+    QDateEdit, QLabel, QInputDialog
 )
 import fdb
 from datetime import date
@@ -935,11 +935,73 @@ class MainWindow(QMainWindow):
                     id_item = table_widget.item(row, 0)  # ID в первом столбце
                     if id_item and id_item.text().strip():
                         id_value = id_item.text().strip()
+
+                        # Проверка, является ли таблица DRIVER
+                        if table_name == "DRIVER":
+                            # Проверяем наличие ссылок в ORDERTABLE
+                            cursor.execute("SELECT COUNT(*) FROM ORDERTABLE WHERE DRIVER_ID = ?", (id_value,))
+                            order_count = cursor.fetchone()[0]
+                            # Проверяем наличие ссылок в CAR
+                            cursor.execute("SELECT COUNT(*) FROM CAR WHERE DRIVER_ID = ?", (id_value,))
+                            car_count = cursor.fetchone()[0]
+
+                            if order_count > 0 or car_count > 0:
+                                message = "Водитель используется в заказах или машинах. "
+                                if order_count > 0:
+                                    message += f"Есть {order_count} связанных заказов. "
+                                if car_count > 0:
+                                    message += f"Есть {car_count} связанных машин. "
+                                message += "Что делать?\n1 - Удалить все связанные записи\n2 - Назначить другого водителя\n3 - Отмена"
+
+                                choice = QMessageBox.question(
+                                    None, "Зависимости", message,
+                                    QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                                    QMessageBox.Cancel
+                                )
+
+                                if choice == QMessageBox.Yes:  # Удалить все связанные записи
+                                    cursor.execute("DELETE FROM PAYMENT_DETAILS WHERE ORDER_ID IN (SELECT ID FROM ORDERTABLE WHERE DRIVER_ID = ?)", (id_value,))
+                                    cursor.execute("DELETE FROM PAYMENT WHERE ORDER_ID IN (SELECT ID FROM ORDERTABLE WHERE DRIVER_ID = ?)", (id_value,))
+                                    cursor.execute("DELETE FROM ORDERTABLE WHERE DRIVER_ID = ?", (id_value,))
+                                    cursor.execute("DELETE FROM CAR WHERE DRIVER_ID = ?", (id_value,))
+                                elif choice == QMessageBox.No:  # Назначить другого водителя
+                                    cursor.execute("SELECT ID, FULL_NAME FROM DRIVER WHERE ID != ?", (id_value,))
+                                    drivers = cursor.fetchall()
+                                    if not drivers:
+                                        QMessageBox.warning(None, "Ошибка", "Нет других водителей для назначения")
+                                        return
+                                    driver_names = [f"{d[0]} - {d[1]}" for d in drivers]
+                                    new_driver_idx, ok = QInputDialog.getItem(
+                                        None, "Выбор водителя", "Выберите нового водителя:",
+                                        driver_names, 0, False
+                                    )
+                                    if ok and new_driver_idx:
+                                        new_driver_id = int(new_driver_idx.split(" - ")[0])
+                                        cursor.execute("UPDATE ORDERTABLE SET DRIVER_ID = ? WHERE DRIVER_ID = ?", (new_driver_id, id_value))
+                                        cursor.execute("UPDATE CAR SET DRIVER_ID = ? WHERE DRIVER_ID = ?", (new_driver_id, id_value))
+                                    else:
+                                        continue
+                                else:  # Отмена
+                                    continue
+
+                        # Проверка, является ли таблица ORDERTABLE
+                        elif table_name == "ORDERTABLE":
+                            # Удаляем связанные записи из PAYMENT_DETAILS
+                            cursor.execute("""
+                                DELETE FROM PAYMENT_DETAILS
+                                WHERE ORDER_ID = ?
+                            """, (id_value,))
+                            # Удаляем связанные записи из PAYMENT
+                            cursor.execute("""
+                                DELETE FROM PAYMENT
+                                WHERE ORDER_ID = ?
+                            """, (id_value,))
+
+                        # Удаляем запись из текущей таблицы
                         cursor.execute(f"DELETE FROM {table_name} WHERE ID = ?", (id_value,))
                         table_widget.removeRow(row)
 
                 con.commit()
-
                 self.load_data(table_name, table_widget)
                 QMessageBox.information(None, "Успех", "Строка успешно удалена")
         except Exception as e:
