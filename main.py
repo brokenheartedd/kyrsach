@@ -900,6 +900,14 @@ class MainWindow(QMainWindow):
                     cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE ID = ?", (id_value,))
                     exists = cursor.fetchone()[0] > 0
 
+                if table_name == "CAR" and not all_empty:
+                    driver_id = row_data[3]  # DRIVER_ID находится на позиции 3
+                    if driver_id:
+                        cursor.execute("SELECT COUNT(*) FROM CAR WHERE DRIVER_ID = ? AND ID != ?", (driver_id, id_value if exists else -1))
+                        if cursor.fetchone()[0] > 0:
+                            QMessageBox.warning(None, "Ошибка", "Выбранный водитель уже назначен на другую машину. Назначьте другого водителя.")
+                            continue
+
                 if not exists:
                     # Новая строка - генерируем ID
                     cursor.execute(f"SELECT MAX(ID) FROM {table_name}")
