@@ -1,6 +1,7 @@
 import sys
 import os
 import configparser
+import re
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QWidget,
@@ -290,6 +291,15 @@ class MainWindow(QMainWindow):
             payment_method = self.payment_method_input.currentText()
             transaction_number = self.transaction_number_input.text().strip()
 
+            # Валидация номера телефона (российский формат)
+            if not re.match(r'^(?:\+7|8)\d{10}$', phone):
+                QMessageBox.warning(None, "Ошибка", "Неверный формат телефона. Используйте +79991234567 или 89991234567 (российский номер)")
+                return
+
+            # Преобразуем номер: заменяем 8 на +7
+            if phone.startswith('8'):
+                phone = '+7' + phone[1:]
+
             # Проверка заполнения всех полей
             if not client_name:
                 QMessageBox.warning(None, "Ошибка", "Введите имя клиента")
@@ -331,7 +341,7 @@ class MainWindow(QMainWindow):
             cursor = con.cursor()
             # Генерируем новый ID для заказа
             cursor.execute("SELECT MAX(ID) FROM ORDERTABLE")
-            max_id = cursor.fetchone()[0]
+            max_id =  cursor.fetchone()[0]
             new_order_id = (max_id or 0) + 1
 
             # Сохраняем заказ
@@ -440,7 +450,7 @@ class MainWindow(QMainWindow):
             if payment_details:
                 payment_details_id = payment_details[0]
                 sql_update_details = """
-                UPDATE PAYMENT_DETAILS SET PAYMENT_METHOD = ?, PAYMENT_DATE = ? WHERE ID = ?
+                UPDATE PAY Сохранение изменений в таблице PAYMENT_DETAILS
                 """
                 cursor.execute(sql_update_details, ("Картой", payment_date, payment_details_id))
             else:
@@ -477,6 +487,15 @@ class MainWindow(QMainWindow):
             distance_text = self.distance_input.text().strip()
             payment_method = self.payment_method_input.currentText()
             transaction_number = self.transaction_number_input.text().strip()
+
+            # Валидация номера телефона (российский формат)
+            if not re.match(r'^(?:\+7|8)\d{10}$', phone):
+                QMessageBox.warning(None, "Ошибка", "Неверный формат телефона. Используйте +79991234567 или 89991234567 (российский номер)")
+                return
+
+            # Преобразуем номер: заменяем 8 на +7
+            if phone.startswith('8'):
+                phone = '+7' + phone[1:]
 
             # Проверка заполнения всех полей
             if not client_name:
