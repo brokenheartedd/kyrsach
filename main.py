@@ -13,7 +13,6 @@ from PyQt5.QtWidgets import (
 import fdb
 from datetime import date
 
-# Load database path from config.ini
 config = configparser.ConfigParser()
 if not os.path.exists('config.ini'):
     print("Ошибка: файл config.ini не найден.")
